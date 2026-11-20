@@ -162,15 +162,44 @@ def export(platform, keyword, products, status, output, download=True, session=N
     return folder / (stem + ".xlsx")
 
 
+def xianyu_search_fetch(browser, keyword):
+    """服务器会话过期时，在同一浏览器中手动登录并重试当前页一次。"""
+    relogin_attempted = False
+
+    def fetch(page):
+        nonlocal relogin_attempted
+        items, problem = browser.search(keyword, page)
+        login_required = any(marker in (problem or "").upper() for marker in (
+            "SESSION_EXPIRED", "SESSION_EMPTY", "NOT_LOGIN", "登录态已失效",
+            "要求登录", "请先登录", "用户未登录",
+        ))
+        if not items and not login_required:
+            login_required = browser.has_login_prompt()
+        if login_required and not relogin_attempted:
+            relogin_attempted = True
+            print("闲鱼登录已失效，正在打开登录页面；请手动登录后回到终端按 Enter。")
+            if not browser.ensure_login(force=True):
+                raise RuntimeError("闲鱼登录未完成；已停止采集")
+            items, problem = browser.search(keyword, page)
+        if problem:
+            raise RuntimeError(problem)
+        return items
+
+    return fetch
+
+
 def run(platform, module):
     parser = argparse.ArgumentParser(description="仅采集搜索列表；按数量自动翻页")
     parser.add_argument("--keyword", default=module.SEARCH)
     parser.add_argument("--limit", type=int, default=int(os.environ.get("EC_LIMIT", "10")))
     parser.add_argument("--max-pages", type=int, default=100, help="自动翻页安全上限")
     parser.add_argument("--no-images", action="store_true")
+    parser.add_argument("--relogin", action="store_true", help="闲鱼：打开浏览器重新登录")
     args = parser.parse_args()
     if args.limit < 1 or args.max_pages < 1 or not args.keyword.strip():
         parser.error("关键词不能为空，数量与页数上限必须大于 0")
+    if args.relogin and platform != "xianyu":
+        parser.error("--relogin 目前仅支持闲鱼")
     keyword = args.keyword.strip()
     module.SEARCH = keyword
     pause = lambda: time.sleep(random.uniform(3, 6))
@@ -180,15 +209,10 @@ def run(platform, module):
             with module.sync_playwright() as pw:
                 browser = module.XianyuBrowser(pw)
                 try:
-                    if not browser.logged_in_hint:
-                        browser.page.goto(module.SEARCH_HOST, wait_until="domcontentloaded")
-                        if not browser.ensure_login():
+                    if args.relogin or not browser.logged_in_hint:
+                        if not browser.ensure_login(force=args.relogin):
                             raise RuntimeError("闲鱼登录未完成")
-                    def fetch(page):
-                        items, problem = browser.search(keyword, page)
-                        if problem:
-                            raise RuntimeError(problem)
-                        return items
+                    fetch = xianyu_search_fetch(browser, keyword)
                     rows, status = collect(fetch, lambda x: x.get("itemId"), args.limit, args.max_pages, pause)
                 finally:
                     browser.close()

@@ -1113,7 +1113,7 @@ class XianyuBrowser:
         self.logged_in_hint = any(name in cookie_names for name in LOGIN_COOKIE_HINTS)
 
         if self.logged_in_hint:
-            print("登录态：已保存（cookie 里有登录标记，本次不会再让你登录）")
+            print("登录态：本地有登录标记，先尝试复用；服务器判定过期时会打开页面重新登录")
         else:
             print("登录态：未检测到。第一次运行需要扫码登录一次，之后会一直复用。")
 
@@ -1278,19 +1278,36 @@ class XianyuBrowser:
 
         return not self.has_login_prompt()
 
-    def ensure_login(self):
+    def ensure_login(self, force=False):
+        """打开真实页面等待用户登录；不以残留 Cookie 作为成功依据。"""
+        self.logged_in_hint = False
+        if force:
+            # 只清理本工具专用闲鱼浏览器上下文的 Cookie，保留整个配置目录。
+            self.context.clear_cookies()
+        try:
+            self.page.goto(f"{SEARCH_HOST}/", wait_until="domcontentloaded", timeout=60000)
+            self.page.bring_to_front()
+        except Exception as error:
+            print(f"无法打开闲鱼登录页面：{type(error).__name__}，请检查网络后重试。")
+            return False
+
+        # 首页通常提供登录入口；未找到时让用户在当前页面手动点击。
+        try:
+            self.page.get_by_text(re.compile(r"^(登录|登录/注册|立即登录|去登录)$")).first.click(timeout=5000)
+        except Exception:
+            pass
         print()
         print("=" * 80)
         print("闲鱼要求登录")
         print("=" * 80)
         print()
         print("请在当前打开的 Chrome 窗口里：")
-        print("  1. 用淘宝/支付宝/手机号扫码登录闲鱼")
+        print("  1. 如果没有登录框，先点击页面上的「登录」，再手动扫码/手机号登录")
         print("  2. 登录后确认右上角出现你的头像")
         print("  3. 不要关闭窗口")
         print()
         print(f"登录态会保存到：{PROFILE_DIR}")
-        print("只需要这一次，以后运行会自动复用，不会再问。")
+        print("以后会优先复用；服务器会话过期时需要再次登录。")
 
         # 有些环境 stdin 看似是终端但实际读不到（计划任务、管道），
         # 这里统一兜住 EOFError，避免整个程序崩掉。
@@ -1306,10 +1323,17 @@ class XianyuBrowser:
         except Exception:
             pass
 
-        if self.has_login_prompt():
-            print("\n页面仍然显示登录框，登录可能没成功。")
+        try:
+            names = {cookie.get("name") for cookie in self.context.cookies()}
+        except Exception:
+            names = set()
+        self.logged_in_hint = any(name in names for name in LOGIN_COOKIE_HINTS)
+        if self.has_login_prompt() or not self.logged_in_hint:
+            self.logged_in_hint = False
+            print("\n还未检测到登录完成，已停止；下次运行会再次打开登录页面。")
             return False
 
+        print("已检测到登录标记，接下来通过搜索请求确认服务器会话有效。")
         return True
 
     # --------------------------------------------------------
@@ -1447,12 +1471,11 @@ class XianyuBrowser:
                 print("cookie 文件还在 —— 本地看起来是已登录状态，")
                 print("但服务器不认这个会话了，刷新页面不会恢复。")
                 print()
-                print("处理：关掉程序后运行一次")
-                print()
-                print("    python xianyu.py --relogin")
-                print()
-                print("会在弹出的窗口里让你重新扫码，之后就能正常跑。")
+                print("程序会打开当前浏览器的登录页面，等待你手动重新登录。")
                 print("=" * 72)
+            if kind in ("session", "login"):
+                # 登录过期不能用页面上的残留商品卡片当作成功结果。
+                return [], problem
             if not problem:
                 problem = "搜索接口返回成功，但没解析出商品"
 
