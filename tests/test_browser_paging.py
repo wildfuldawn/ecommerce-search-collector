@@ -117,6 +117,17 @@ class BrowserPagingTests(unittest.TestCase):
             self.assertEqual(self.page.evaluate('window.clicks'), 1)
             self.assertEqual(len(self.navigations), 1)
 
+    def test_visible_login_bridge_iframe_is_not_a_login_form(self):
+        self.page.goto('https://collector.test/search')
+        self.page.evaluate("() => { const frame=document.createElement('iframe'); frame.src='https://passport.example.test/bridge'; document.body.appendChild(frame); }")
+        self.page.locator('iframe').wait_for(state='visible')
+        self.assertFalse(self.search('xianyu').login_prompt_visible())
+
+    def test_actual_login_form_is_detected(self):
+        self.page.goto('https://collector.test/search')
+        self.page.evaluate("() => { document.body.innerHTML='<div role=dialog><h2>请先登录，再继续使用</h2><input placeholder=请输入手机号></div>'; }")
+        self.assertTrue(self.search('xianyu').login_prompt_visible())
+
 
 if __name__ == '__main__':
     unittest.main()

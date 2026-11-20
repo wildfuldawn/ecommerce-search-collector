@@ -37,6 +37,8 @@ python vendor/xianyu/xianyu.py --keyword 机械键盘 --limit 50
 
 只访问搜索列表仍可能遇到登录失效、验证码或平台风控；程序不会自动解决验证码。登录资料保存在本机 `profiles/`，不随源码上传。
 
+启动时优先复用浏览器中的现有状态，并从本机 `profiles/<平台>/login_state.json` 恢复 Chrome 退出后可能丢失的会话 Cookie；不会用旧备份覆盖已有的新 Cookie。自动恢复登录不会清空 Cookie，也不会仅因为页面存在登录 iframe 就要求重登。只有主动使用 `--relogin` 才会清理本工具当前平台的 Cookie。服务器明确使会话过期时，仍需本人手动登录；先前已被清掉且未备份的登录无法凭空恢复。
+
 ## 验证
 
 ```powershell

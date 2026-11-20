@@ -134,7 +134,8 @@ def run_platform(platform, app_settings):
 
     count = ui.ask_int("要采集多少个商品（自动翻页补足）", max(1, int(saved.get("count", 10))), 1)
 
-    check_login(platform)
+    print(f"登录目录：{env_check.profile_dir(platform)}")
+    print("将在采集浏览器中直接复用并检查会话。")
 
     proxy = (app_settings.get("proxy") or "").strip()
     if proxy:

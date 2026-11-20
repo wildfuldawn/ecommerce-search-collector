@@ -3,6 +3,7 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 from manual_login import HOME_URLS, NAMES, has_identity, login_error
@@ -105,6 +106,7 @@ class BrowserSearch:
         self.current_page, self.pending_page = 0, 0
         self.responses, self.previous_ids = [], set()
         self.recovered = False
+        self.state_file = None
 
     def __enter__(self):
         self.playwright = self.module.sync_playwright().start()
@@ -117,12 +119,16 @@ class BrowserSearch:
         if proxy:
             options['proxy'] = proxy
         profile = os.environ.get('EC_PROFILE') or getattr(self.module, 'PROFILE_DIR', self.module.USER_DATA_DIR)
+        self.state_file = Path(profile) / 'login_state.json'
         try:
             self.context = self.playwright.chromium.launch_persistent_context(profile, **options)
             self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
             self.page.on('response', self.on_response)
-            if self.force_login or not self.has_login():
-                self.login(force=self.force_login)
+            if self.force_login:
+                self.login(force=True)
+            else:
+                self.restore_login_state()
+                print(f'复用登录目录：{profile}；将由当前搜索页确认会话，不主动清空登录状态。')
             return self
         except BaseException:
             if hasattr(self, 'context'):
@@ -132,7 +138,10 @@ class BrowserSearch:
 
     def __exit__(self, *args):
         try:
-            self.context.close()
+            try:
+                self.save_login_state()
+            finally:
+                self.context.close()
         finally:
             self.playwright.stop()
 
@@ -143,17 +152,62 @@ class BrowserSearch:
         text = '; '.join(f"{c['name']}={c['value']}" for c in cookies if c.get('name') and c.get('value'))
         return has_identity(self.platform, text)
 
-    def login(self, force=False):
+    def save_login_state(self):
+        if self.state_file is None:
+            return
+        try:
+            # 会话 Cookie 可能不会随 Chrome 正常退出保留，另存本机以供恢复。
+            state = self.context.storage_state()
+            if not state.get('cookies'):
+                return
+            self.state_file.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.state_file.with_suffix('.tmp')
+            temporary.write_text(json.dumps(state, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(self.state_file)
+        except Exception as error:
+            print(f'登录状态额外备份未完成（{type(error).__name__}），浏览器配置目录仍保留。')
+
+    def restore_login_state(self):
+        if self.state_file is None or not self.state_file.exists():
+            return
+        try:
+            # 已有的更新 Cookie 优先，避免用旧备份覆盖刚完成的登录。
+            existing = {(c['name'], c['domain'], c.get('path', '/')) for c in self.context.cookies()}
+            state = json.loads(self.state_file.read_text(encoding='utf-8'))
+            cookies = [c for c in state.get('cookies', [])
+                       if (c['name'], c['domain'], c.get('path', '/')) not in existing
+                       and (c.get('expires', -1) <= 0 or c['expires'] > time.time())]
+            if cookies:
+                self.context.add_cookies(cookies)
+                print('已从本机备份恢复浏览器未保留的会话 Cookie。')
+        except Exception as error:
+            print(f'登录备份暂时无法恢复（{type(error).__name__}），将继续使用现有浏览器状态。')
+
+    def login_prompt_visible(self):
+        host = urlparse(self.page.url).hostname or ''
+        if host.startswith(('login.', 'passport.')):
+            return True
+        # iframe 可能常驻，即使账号已登录也存在；只认实际可见的登录表单/标题。
+        headings = self.page.get_by_text(re.compile(
+            r'^(请先登录[，,]?\s*再继续使用|短信登录|手机扫码安全登录|扫码登录|密码登录|账号密码登录)$'))
+        if any(headings.nth(i).is_visible() for i in range(headings.count())):
+            return True
+        inputs = self.page.locator('input[type="password"], input[placeholder*="手机号"], input[placeholder*="验证码"]')
+        return any(inputs.nth(i).is_visible() for i in range(inputs.count()))
+
+    def login(self, force=False, navigate=True):
         name = NAMES.get(self.platform, '闲鱼')
         home = HOME_URLS.get(self.platform, 'https://www.goofish.com')
         if force:
             self.context.clear_cookies()
-        self.page.goto(home, wait_until='domcontentloaded', timeout=60000)
+        if navigate:
+            self.page.goto(home, wait_until='domcontentloaded', timeout=60000)
         self.page.bring_to_front()
-        try:
-            self.page.get_by_text(re.compile(r'^(亲，请登录|你好，请登录|登录|登录/注册|立即登录|请登录)$')).first.click(timeout=5000)
-        except Exception:
-            pass
+        if not self.login_prompt_visible():
+            try:
+                self.page.get_by_text(re.compile(r'^(亲，请登录|你好，请登录|登录|登录/注册|立即登录|请登录)$')).first.click(timeout=5000)
+            except Exception:
+                pass
         print(f'请在浏览器中手动登录{name}；登录完成后回到终端按 Enter，输入 q 取消。')
         while True:
             try:
@@ -162,12 +216,13 @@ class BrowserSearch:
                 raise RuntimeError('无法读取输入，登录尚未确认')
             if answer == 'q' or self.page.is_closed():
                 raise RuntimeError('已取消登录')
-            if self.has_login():
+            if self.has_login() and not self.login_prompt_visible():
                 break
             print('还未检测到账号登录，请完成登录后再按 Enter。')
         # 新登录后只打开一次搜索结果，再逐次点击下一页。
         self.current_page = self.pending_page = 0
         self.previous_ids = set()
+        self.save_login_state()
 
     def on_response(self, response):
         url = response.url.lower()
@@ -245,12 +300,8 @@ class BrowserSearch:
                 if stable >= 2:
                     return items
             try:
-                host = urlparse(self.page.url).hostname or ''
-                if host.startswith(('login.', 'passport.')):
-                    raise NeedLogin('当前页面要求登录')
-                dialogs = self.page.locator('iframe[src*="passport"], iframe[src*="login"]')
-                if any(dialogs.nth(i).is_visible() for i in range(dialogs.count())):
-                    raise NeedLogin('当前页面显示登录框')
+                if self.login_prompt_visible():
+                    raise NeedLogin('当前页面显示登录表单')
             except NeedLogin:
                 raise
             except Exception:
@@ -275,15 +326,16 @@ class BrowserSearch:
             items = self.wait_results()
             self.current_page = page_index
             self.previous_ids = {self.identify(item) for item in items}
+            self.save_login_state()
             return items
         except NoNextPage:
             return []
-        except NeedLogin:
+        except NeedLogin as error:
             if self.recovered:
                 raise
             self.recovered = True
-            print('服务器要求重新登录。登录后恢复搜索，再逐页点击回到中断位置。')
-            self.login(force=True)
+            print(f'需要确认登录：{error}。现有 Cookie 保留，请在当前页面完成登录。')
+            self.login(force=False, navigate=False)
             for previous in range(1, page_index):
                 self.fetch(previous)
             return self.fetch(page_index)
