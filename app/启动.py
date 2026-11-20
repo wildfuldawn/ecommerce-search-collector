@@ -213,9 +213,8 @@ def show_settings(app_settings):
     print("各平台上次用的参数：")
     for platform, label in PLATFORM_NAMES.items():
         item = settings.platform_settings(app_settings, platform)
-        pages = f"，{item.get('pages')} 页" if item.get("pages") else ""
         print(f"  {label}：关键词 {item.get('keyword', '-')}"
-              f"，数量 {item.get('count', '-')}{pages}")
+              f"，目标数量 {item.get('count', '-')}，在结果页点击下一页")
 
     print()
     print(f"登录目录：{env_check.PROFILES}")
@@ -348,7 +347,7 @@ def main():
                    for platform in ("jingdong", "taobao", "xianyu")]
         options += [
             ("__settings__", "查看 / 修改设置", "代理、上次参数、目录位置"),
-            ("__env__", "环境自检", "检查依赖、Chrome、签名文件"),
+            ("__env__", "环境自检", "检查依赖和 Chrome"),
             ("__relogin__", "重新登录", "清掉某个平台的登录态"),
             ("__quit__", "退出", ""),
         ]

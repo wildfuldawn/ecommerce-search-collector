@@ -203,22 +203,9 @@ def run(platform, module):
     pause = lambda: time.sleep(random.uniform(3, 6))
     output = os.environ.get("EC_OUTPUT") or str(Path(__file__).resolve().parents[1] / "output")
     try:
-        if platform == "xianyu":
-            with module.sync_playwright() as pw:
-                browser = module.XianyuBrowser(pw)
-                try:
-                    if args.relogin or not browser.logged_in_hint:
-                        if not browser.ensure_login(force=args.relogin):
-                            raise RuntimeError("闲鱼登录未完成")
-                    fetch = xianyu_search_fetch(browser, keyword)
-                    rows, status = collect(fetch, lambda x: x.get("itemId"), args.limit, args.max_pages, pause)
-                finally:
-                    browser.close()
-        else:
-            from manual_login import ApiSearch
-            search = ApiSearch(platform, module, keyword, force_login=args.relogin)
-            identify = (lambda x: x.get("skuId") or x.get("wareId")) if platform == "jingdong" else (lambda x: x.get("item_id"))
-            rows, status = collect(search.fetch, identify, args.limit, args.max_pages, pause)
+        from browser_search import BrowserSearch
+        with BrowserSearch(platform, module, keyword, force_login=args.relogin) as search:
+            rows, status = collect(search.fetch, search.identify, args.limit, args.max_pages, pause)
         export(platform, keyword, rows, status, output, not args.no_images)
         return 0 if status["complete"] else 2
     except Exception as error:

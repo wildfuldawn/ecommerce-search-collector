@@ -16,7 +16,7 @@ OUTPUT = paths.OUTPUT
 
 # 平台 → (vendor 子目录, 主脚本, 额外必需文件)
 PLATFORM_FILES = {
-    "jingdong": ("jingdong", "jd_sku.py", ["test_fixed.js"]),
+    "jingdong": ("jingdong", "jd_sku.py", []),
     "taobao": ("taobao", "xuanzeshuliang.py", []),
     "xianyu": ("xianyu", "xianyu.py", []),
 }
@@ -255,17 +255,6 @@ def check_platform(platform):
     for extra in extras:
         if not os.path.isfile(os.path.join(folder, extra)):
             missing.append(f"vendor/{sub}/{extra}")
-
-    if platform == "jingdong":
-        node = shutil.which("node") or ""
-        if not node:
-            for guess in (r"%ProgramFiles%\nodejs\node.exe",
-                          r"%LOCALAPPDATA%\Programs\nodejs\node.exe"):
-                if os.path.isfile(os.path.expandvars(guess)):
-                    node = guess
-                    break
-        if not node:
-            missing.append("Node.js 未安装 · 京东签名需要 node 执行 test_fixed.js")
 
     return missing
 
