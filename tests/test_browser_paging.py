@@ -60,7 +60,7 @@ class BrowserPagingTests(unittest.TestCase):
         self.context.close()
 
     def search(self, platform):
-        result = BrowserSearch(platform, SimpleNamespace(), '键盘', timeout=3)
+        result = BrowserSearch(platform, SimpleNamespace(), '键盘', timeout=5)
         result.page, result.context = self.page, self.context
         return result
 
@@ -143,6 +143,51 @@ class BrowserPagingTests(unittest.TestCase):
             self.assertEqual(search.fetch(4), [])
             self.assertEqual(self.page.evaluate('window.clicks'), 2)
             self.assertEqual(len(self.navigations), 1)
+
+    def jd_fixture(self, update_active=True):
+        controls = '<div class="_pagination_center_build"><div class="_pagination_item_build _fast_next_build" onclick="window.fastClicks++">...</div><div id="active" class="_pagination_item_build _active_build">1</div><div id="next" class="_pagination_next_build" onclick="advance()">下一页</div></div>'
+        actual = FIXTURE.replace('<button id="next" onclick="advance()">下一页</button>', controls)
+        actual = actual.replace('let current=1;', 'let current=1; window.fastClicks=0;')
+        if update_active:
+            actual = actual.replace('function render() {', "function render() { document.querySelector('#active').innerText=current;")
+        self.page.unroute('**/*')
+        self.page.route('**/*', lambda route: route.fulfill(status=200, content_type='text/html', body=actual))
+
+    def test_real_jd_next_does_not_click_fast_next(self):
+        self.jd_fixture()
+        with patch('browser_search.SEARCH_URLS', {'jingdong': 'https://collector.test/search?q={}' }):
+            search = self.search('jingdong')
+            search.fetch(1)
+            self.assertEqual(search.identify(search.fetch(2)[0]), '10002')
+            self.assertEqual(self.page.locator('#active').inner_text(), '2')
+            self.assertEqual(self.page.evaluate('window.fastClicks'), 0)
+            self.assertEqual(len(self.navigations), 1)
+
+    def test_changed_goods_without_expected_active_page_are_not_accepted(self):
+        self.jd_fixture(update_active=False)
+        with patch('browser_search.SEARCH_URLS', {'jingdong': 'https://collector.test/search?q={}' }):
+            search = self.search('jingdong')
+            search.fetch(1)
+            search.timeout=0.9
+            with self.assertRaisesRegex(RuntimeError, '超时'):
+                search.fetch(2)
+            self.assertEqual(search.current_page, 1)
+
+    def test_jd_batches_on_same_visible_page_are_merged_without_dom_recommendations(self):
+        self.jd_fixture()
+        def response(route):
+            ids = ('11', '12') if 'batch=1' in route.request.url else ('13', '14')
+            route.fulfill(json={'code':'0','data':{'wareList':[{'skuId':key} for key in ids]}})
+        self.page.route('**/api?**', response)
+        self.page.add_init_script("document.addEventListener('DOMContentLoaded',()=>{ fetch('/api?functionId=pc_search_searchWare&batch=1'); setTimeout(()=>fetch('/api?functionId=pc_search_searchWare&batch=2'),700); });")
+        with patch('browser_search.SEARCH_URLS', {'jingdong': 'https://collector.test/search?q={}' }):
+            search=self.search('jingdong')
+            search.module=SimpleNamespace(explain_failure=lambda data,name:None)
+            self.page.on('response',search.on_response)
+            rows=search.fetch(1)
+            self.assertEqual({row['skuId'] for row in rows},{'11','12','13','14'})
+            self.assertEqual(search.current_page,1)
+            self.assertEqual(self.page.evaluate('window.clicks'),0)
 
 
 if __name__ == '__main__':

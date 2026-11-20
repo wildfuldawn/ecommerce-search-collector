@@ -97,6 +97,16 @@ class LoginReuseTests(unittest.TestCase):
             search.parse_payload({'ret': ['FAIL_SYS_ILLEGAL_ACCESS::非法请求']})
         self.assertNotIsInstance(caught.exception, NeedLogin)
 
+    def test_rejected_or_cancelled_login_cannot_overwrite_saved_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            search=self.search()
+            search.state_file=Path(directory)/'login_state.json'
+            search.state_file.write_text('preserve-existing-backup',encoding='utf-8')
+            search.login_rejected=True
+            search.save_login_state()
+            self.assertEqual(search.state_file.read_text(encoding='utf-8'),'preserve-existing-backup')
+            search.context.storage_state.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

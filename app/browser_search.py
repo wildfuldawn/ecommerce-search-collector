@@ -15,6 +15,7 @@ SEARCH_URLS = {
     "xianyu": "https://www.goofish.com/search?q={}",
 }
 NEXT_SELECTORS = (
+    '[class*="_pagination_next_"]',  # 京东真实页：排除旁边的 fast_next 快速跳页。
     # 闲鱼真实页面是无文字箭头；定位右箭头所在按钮，不依赖构建哈希后缀。
     'button[class*="search-pagination-arrow-container"]:has([class*="search-pagination-arrow-right"])',
     '.ant-pagination-next', '.next-pagination-item.next-next',
@@ -48,6 +49,8 @@ def click_next_page(page):
                 if not control.is_visible():
                     continue
                 classes = control.get_attribute('class') or ''
+                if re.search(r'fast[_-]?next|jump', classes, re.I):
+                    continue
                 disabled = (control.get_attribute('aria-disabled') == 'true'
                             or control.get_attribute('disabled') is not None
                             or bool(re.search(r'disabled|disable(?:\s|$)', classes, re.I)))
@@ -115,6 +118,7 @@ class BrowserSearch:
         self.responses, self.previous_ids = [], set()
         self.recovered = False
         self.state_file = None
+        self.login_rejected = False
 
     def __enter__(self):
         self.playwright = self.module.sync_playwright().start()
@@ -161,7 +165,7 @@ class BrowserSearch:
         return has_identity(self.platform, text)
 
     def save_login_state(self):
-        if self.state_file is None:
+        if self.state_file is None or self.login_rejected:
             return
         try:
             # 会话 Cookie 可能不会随 Chrome 正常退出保留，另存本机以供恢复。
@@ -292,23 +296,46 @@ class BrowserSearch:
     def wait_results(self):
         deadline = time.monotonic() + self.timeout
         dom_ids, stable = set(), 0
+        jd_items, jd_last_change, jd_from_api = {}, time.monotonic(), False
         while time.monotonic() < deadline:
             self.page.wait_for_timeout(400)
             items = []
             while self.responses:
                 items.extend(self.parse_payload(self.responses.pop(0)))
             from_response = bool(items)
+            if self.platform == 'jingdong' and from_response and not jd_from_api:
+                jd_items = {}  # 搜索响应到达后，不混入 DOM 中的推荐商品。
+                jd_from_api = True
             if not items:
-                items = self.page.evaluate(DOM_CARDS, self.platform)
+                items = list(jd_items.values()) if jd_from_api else self.page.evaluate(DOM_CARDS, self.platform)
             items = list({self.identify(item): item for item in items if self.identify(item)}.values())
             ids = {self.identify(item) for item in items if self.identify(item)}
-            if ids and ids != self.previous_ids:
-                if from_response:
+            active_selectors = {
+                'jingdong': '[class*="_pagination_item_"][class*="_active_"]',
+                'taobao': '.next-pagination .next-current',
+                'xianyu': '[class*="search-pagination-page-box-active"]',
+            }
+            active_labels = self.page.locator(active_selectors[self.platform]).all_inner_texts()
+            active_numbers = [int(value.strip()) for value in active_labels if value.strip().isdigit()]
+            page_ready = not active_numbers or self.pending_page in active_numbers
+            if self.platform == 'jingdong' and page_ready:
+                # 京东一个可见页由两批搜索请求组成；第二批不是翻到下一页。
+                new_keys = ids - jd_items.keys()
+                if new_keys:
+                    jd_last_change = time.monotonic()
+                jd_items.update({self.identify(item): item for item in items})
+                items, ids = list(jd_items.values()), set(jd_items)
+            if ids and ids != self.previous_ids and page_ready:
+                if self.platform == 'jingdong':
+                    if time.monotonic() - jd_last_change >= 2.4:
+                        return items
+                elif from_response:
                     return items
-                stable = stable + 1 if ids == dom_ids else 0
-                dom_ids = ids
-                if stable >= 2:
-                    return items
+                else:
+                    stable = stable + 1 if ids == dom_ids else 0
+                    dom_ids = ids
+                    if stable >= 2:
+                        return items
             try:
                 if self.login_prompt_visible():
                     raise NeedLogin('当前页面显示登录表单')
@@ -336,11 +363,13 @@ class BrowserSearch:
             items = self.wait_results()
             self.current_page = page_index
             self.previous_ids = {self.identify(item) for item in items}
+            self.login_rejected = False
             self.save_login_state()
             return items
         except NoNextPage:
             return []
         except NeedLogin as error:
+            self.login_rejected = True
             if self.recovered:
                 raise
             self.recovered = True
