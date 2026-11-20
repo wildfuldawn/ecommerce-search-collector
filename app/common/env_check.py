@@ -23,7 +23,7 @@ PLATFORM_FILES = {
 
 # 平台 → 判定"已登录"的身份 cookie 名
 LOGIN_MARKERS = {
-    "jingdong": ("pt_key", "pt_pin", "__jdu"),
+    "jingdong": ("pt_key", "pt_pin", "thor", "pin", "pinId"),
     "taobao": ("unb", "cookie2", "_tb_token_"),
     "xianyu": ("unb", "tracknick"),
 }
@@ -285,10 +285,17 @@ def login_state(platform, harvest=None):
         return False, 0, []
 
     try:
-        cookies = harvest(profile_dir(platform))
+        cookies = harvest(platform)
     except Exception:
         return False, 0, []
 
     names = {c.get("name") for c in cookies if c.get("name")}
     hit = [m for m in markers if m in names]
-    return bool(hit), len(cookies), hit
+    if platform in ("taobao", "jingdong"):
+        from manual_login import has_identity
+        cookie_text = "; ".join(f"{c.get('name')}={c.get('value')}" for c in cookies
+                                if c.get("name") and c.get("value"))
+        logged = has_identity(platform, cookie_text)
+    else:
+        logged = bool(hit)
+    return logged, len(cookies), hit

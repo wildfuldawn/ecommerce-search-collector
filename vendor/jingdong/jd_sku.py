@@ -393,7 +393,7 @@ def explain_failure(data, api_name):
         return (
             f"{api_name}：code=605，京东要求先验证身份。\n"
             f"  风控接口：{ev_api or '未知'}\n"
-            "  处理：浏览器登录 jd.com → 完整复制 Cookie → 填进 config.py 的 COOKIE。"
+            "  程序会打开京东页面等待你手动登录/验证，再重试当前搜索页。"
         )
 
     if code != "0":

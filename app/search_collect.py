@@ -194,12 +194,10 @@ def run(platform, module):
     parser.add_argument("--limit", type=int, default=int(os.environ.get("EC_LIMIT", "10")))
     parser.add_argument("--max-pages", type=int, default=100, help="自动翻页安全上限")
     parser.add_argument("--no-images", action="store_true")
-    parser.add_argument("--relogin", action="store_true", help="闲鱼：打开浏览器重新登录")
+    parser.add_argument("--relogin", action="store_true", help="打开当前平台浏览器重新登录")
     args = parser.parse_args()
     if args.limit < 1 or args.max_pages < 1 or not args.keyword.strip():
         parser.error("关键词不能为空，数量与页数上限必须大于 0")
-    if args.relogin and platform != "xianyu":
-        parser.error("--relogin 目前仅支持闲鱼")
     keyword = args.keyword.strip()
     module.SEARCH = keyword
     pause = lambda: time.sleep(random.uniform(3, 6))
@@ -216,23 +214,11 @@ def run(platform, module):
                     rows, status = collect(fetch, lambda x: x.get("itemId"), args.limit, args.max_pages, pause)
                 finally:
                     browser.close()
-        elif platform == "jingdong":
-            try:
-                cookie, cookie_map, _ = module.ensure_cookie()
-            except module.JdBlocked:
-                module.login_via_browser(module.USER_DATA_DIR)
-                cookie, cookie_map, _ = module.ensure_cookie()
-            rows, status = collect(lambda page: module.search_page(keyword, page, cookie, cookie_map),
-                                   lambda x: x.get("skuId") or x.get("wareId"), args.limit, args.max_pages, pause)
         else:
-            cookie, _ = module.ensure_cookie()
-            cookie = cookie or module.login_via_browser(module.USER_DATA_DIR)
-            if not cookie:
-                raise RuntimeError("未取得登录态")
-            module.COOKIE = cookie
-            spider = module.TaobaoMTop()
-            rows, status = collect(lambda page: module.collect_products(spider.search(keyword, page)),
-                                   lambda x: x.get("item_id"), args.limit, args.max_pages, pause)
+            from manual_login import ApiSearch
+            search = ApiSearch(platform, module, keyword, force_login=args.relogin)
+            identify = (lambda x: x.get("skuId") or x.get("wareId")) if platform == "jingdong" else (lambda x: x.get("item_id"))
+            rows, status = collect(search.fetch, identify, args.limit, args.max_pages, pause)
         export(platform, keyword, rows, status, output, not args.no_images)
         return 0 if status["complete"] else 2
     except Exception as error:
