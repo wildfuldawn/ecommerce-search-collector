@@ -65,6 +65,38 @@ class LoginReuseTests(unittest.TestCase):
         search.login.assert_not_called()
         search.context.clear_cookies.assert_not_called()
 
+    def test_default_profile_matches_menu_profile_instead_of_legacy_vendor_path(self):
+        search = self.search()
+        search.platform = 'taobao'
+        manager = Mock()
+        context = manager.start.return_value.chromium.launch_persistent_context.return_value
+        context.pages = []
+        search.module = SimpleNamespace(sync_playwright=Mock(return_value=manager),
+            _apply_browser_env=lambda options: options, parse_proxy=lambda: None,
+            USER_DATA_DIR='legacy-profile-should-not-be-used')
+        search.restore_login_state = Mock()
+        with patch.dict('os.environ'):
+            import os
+            os.environ.pop('EC_PROFILE', None)
+            search.__enter__()
+        actual = manager.start.return_value.chromium.launch_persistent_context.call_args.args[0]
+        self.assertEqual(Path(actual), Path(__file__).resolve().parents[1] / 'profiles/taobao')
+
+    def test_taobao_illegal_access_without_login_waits_for_login(self):
+        search = self.search()
+        search.platform = 'taobao'
+        search.context.cookies.return_value = []
+        with self.assertRaisesRegex(NeedLogin, '尚未登录'):
+            search.parse_payload({'ret': ['FAIL_SYS_ILLEGAL_ACCESS::非法请求']})
+
+    def test_taobao_illegal_access_with_identity_is_not_blindly_relogged(self):
+        search = self.search()
+        search.platform = 'taobao'
+        search.context.cookies.return_value = [{'name': 'unb', 'value': 'user'}, {'name': 'cookie2', 'value': 'session'}]
+        with self.assertRaisesRegex(RuntimeError, '非法请求') as caught:
+            search.parse_payload({'ret': ['FAIL_SYS_ILLEGAL_ACCESS::非法请求']})
+        self.assertNotIsInstance(caught.exception, NeedLogin)
+
 
 if __name__ == '__main__':
     unittest.main()

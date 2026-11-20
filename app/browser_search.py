@@ -126,7 +126,7 @@ class BrowserSearch:
         proxy = self.module.parse_proxy()
         if proxy:
             options['proxy'] = proxy
-        profile = os.environ.get('EC_PROFILE') or getattr(self.module, 'PROFILE_DIR', self.module.USER_DATA_DIR)
+        profile = os.environ.get('EC_PROFILE') or str(Path(__file__).resolve().parents[1] / 'profiles' / self.platform)
         self.state_file = Path(profile) / 'login_state.json'
         try:
             self.context = self.playwright.chromium.launch_persistent_context(profile, **options)
@@ -277,6 +277,8 @@ class BrowserSearch:
             raise NeedLogin('淘宝要求登录')
         if 'FAIL_SYS_TOKEN' in message.upper():
             return []
+        if 'FAIL_SYS_ILLEGAL_ACCESS' in message.upper() and not self.has_login():
+            raise NeedLogin('淘宝尚未登录，搜索接口要求先完成账号登录')
         if login_error(message):
             raise NeedLogin(message)
         if ret and 'SUCCESS' not in message.upper():
