@@ -128,6 +128,22 @@ class BrowserPagingTests(unittest.TestCase):
         self.page.evaluate("() => { document.body.innerHTML='<div role=dialog><h2>请先登录，再继续使用</h2><input placeholder=请输入手机号></div>'; }")
         self.assertTrue(self.search('xianyu').login_prompt_visible())
 
+    def test_real_xianyu_unlabelled_right_arrow_pages_in_scroll_container(self):
+        arrow = '<button id="next" class="search-pagination-arrow-container--differentBuild" onclick="advance()"><div class="search-pagination-arrow-base--build search-pagination-arrow-right--changedHash"></div></button>'
+        actual = FIXTURE.replace('<button id="next" onclick="advance()">下一页</button>', arrow)
+        actual = actual.replace('<div id="cards"></div>', '<div style="height:350px;overflow:auto"><div id="cards" style="min-height:1400px"></div>')
+        actual = actual.replace('<script>', '</div><script>')
+        self.page.unroute('**/*')
+        self.page.route('**/*', lambda route: route.fulfill(status=200, content_type='text/html', body=actual))
+        with patch('browser_search.SEARCH_URLS', {'xianyu': 'https://collector.test/search?q={}' }):
+            search = self.search('xianyu')
+            self.assertEqual(search.identify(search.fetch(1)[0]), '10001')
+            self.assertEqual(search.identify(search.fetch(2)[0]), '10002')
+            self.assertEqual(search.identify(search.fetch(3)[0]), '10003')
+            self.assertEqual(search.fetch(4), [])
+            self.assertEqual(self.page.evaluate('window.clicks'), 2)
+            self.assertEqual(len(self.navigations), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

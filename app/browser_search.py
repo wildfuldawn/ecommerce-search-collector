@@ -15,6 +15,8 @@ SEARCH_URLS = {
     "xianyu": "https://www.goofish.com/search?q={}",
 }
 NEXT_SELECTORS = (
+    # 闲鱼真实页面是无文字箭头；定位右箭头所在按钮，不依赖构建哈希后缀。
+    'button[class*="search-pagination-arrow-container"]:has([class*="search-pagination-arrow-right"])',
     '.ant-pagination-next', '.next-pagination-item.next-next',
     '.pagination-next', '.pagination .next', '.ui-pager-next', '[class*="pagination-next"]',
     '[class*="Pagination"] [class*="next"]', '[class*="pagination"] [class*="next"]',
@@ -37,23 +39,29 @@ def click_next_page(page):
     candidates = [page.locator(selector) for selector in NEXT_SELECTORS]
     candidates += [page.get_by_role('button', name=re.compile(r'^下一页\s*[>›»]?$')),
                    page.get_by_role('link', name=re.compile(r'^下一页\s*[>›»]?$'))]
-    found_disabled = False
-    for candidate in candidates:
-        for index in range(candidate.count()):
-            control = candidate.nth(index)
-            if not control.is_visible():
-                continue
-            classes = control.get_attribute('class') or ''
-            disabled = (control.get_attribute('aria-disabled') == 'true'
-                        or control.get_attribute('disabled') is not None
-                        or bool(re.search(r'disabled|disable(?:\s|$)', classes, re.I)))
-            if disabled or not control.is_enabled():
-                found_disabled = True
-                continue
-            control.click(timeout=10000)
-            return
-    if found_disabled:
-        raise NoNextPage('当前搜索结果已到最后一页（下一页不可用）')
+    deadline = time.monotonic() + 8
+    while True:
+        found_disabled = False
+        for candidate in candidates:
+            for index in range(candidate.count()):
+                control = candidate.nth(index)
+                if not control.is_visible():
+                    continue
+                classes = control.get_attribute('class') or ''
+                disabled = (control.get_attribute('aria-disabled') == 'true'
+                            or control.get_attribute('disabled') is not None
+                            or bool(re.search(r'disabled|disable(?:\s|$)', classes, re.I)))
+                if disabled or not control.is_enabled():
+                    found_disabled = True
+                    continue
+                # Playwright 会把按钮滚入所在的真实滚动容器，再点击。
+                control.click(timeout=10000)
+                return
+        if found_disabled:
+            raise NoNextPage('当前搜索结果已到最后一页（下一页不可用）')
+        if time.monotonic() >= deadline:
+            break
+        page.wait_for_timeout(200)  # 商品响应可能先于分页控件完成渲染。
     raise RuntimeError('未找到可用的「下一页」控件，已停止；不会重新搜索或拼接翻页地址')
 
 
