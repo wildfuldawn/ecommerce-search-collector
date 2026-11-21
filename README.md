@@ -10,6 +10,17 @@
 
 需要 Python 3.10+ 和 Google Chrome。当前浏览器翻页流程不需要 Node.js 或单独运行接口签名器；旧版接口代码只作兼容参考。
 
+Windows 使用步骤：
+
+1. 下载并解压本项目源码，准备好 Python 3.10+。
+2. 双击 `1-安装环境.bat` 安装依赖。
+3. 电脑没有 Chrome 时，下载 [Chrome 安装包 ZIP（Windows 64 位，约 160 MB）](https://github.com/wildfuldawn/ecommerce-search-collector/releases/download/chrome-installer-20261121/chrome-installer-windows-x64.zip)，解压到项目根目录，确保出现 `vendor/browser/ChromeStandaloneSetup64.exe`，再双击 `3-安装浏览器.bat` 按提示安装。已有 Chrome 可跳过。
+4. 双击 `2-开始采集.bat`，选择平台、输入关键词和商品数量。首次使用在弹出的浏览器内登录，再回到终端按 Enter。
+
+浏览器安装包放在 [GitHub Release](https://github.com/wildfuldawn/ecommerce-search-collector/releases/tag/chrome-installer-20261121)，不会包含在普通源码 ZIP 中。附件仅含 Chrome 安装程序与安装说明，不含 Python、Node.js、账号或采集结果；同一 Release 的 `SHA256SUMS.txt` 可校验 ZIP 完整性。安装程序已核对 Google LLC 数字签名。
+
+也可在终端安装依赖并启动：
+
 ```powershell
 python -m pip install -r requirements.txt
 python app/启动.py
