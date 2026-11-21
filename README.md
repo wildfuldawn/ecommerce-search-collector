@@ -12,12 +12,13 @@
 
 Windows 使用步骤：
 
-1. 下载并解压本项目源码，准备好 Python 3.10+。
-2. 双击 `1-安装环境.bat` 安装依赖。
-3. 电脑没有 Chrome 时，下载 [Chrome 安装包 ZIP（Windows 64 位，约 160 MB）](https://github.com/wildfuldawn/ecommerce-search-collector/releases/download/chrome-installer-20261121/chrome-installer-windows-x64.zip)，解压到项目根目录，确保出现 `vendor/browser/ChromeStandaloneSetup64.exe`，再双击 `3-安装浏览器.bat` 按提示安装。已有 Chrome 可跳过。
-4. 双击 `2-开始采集.bat`，选择平台、输入关键词和商品数量。首次使用在弹出的浏览器内登录，再回到终端按 Enter。
+1. 下载并解压本项目源码。
+2. 电脑没有 Python 时，下载 [Python 3.12.10 安装包 ZIP（Windows 64 位，约 26 MB）](https://github.com/wildfuldawn/ecommerce-search-collector/releases/download/python-installer-20261121/python-installer-windows-x64.zip)，解压到项目根目录，确保出现 `vendor/python/python-3.12.10-amd64.exe`。已有可用的 Python 3.10+ 可跳过下载。
+3. 电脑没有 Chrome 时，下载 [Chrome 安装包 ZIP（Windows 64 位，约 160 MB）](https://github.com/wildfuldawn/ecommerce-search-collector/releases/download/chrome-installer-20261121/chrome-installer-windows-x64.zip)，同样解压到项目根目录，确保出现 `vendor/browser/ChromeStandaloneSetup64.exe`。已有 Chrome 可跳过。
+4. 双击 `1-安装环境.bat`。未检测到 Python 时，脚本会调用上述安装包安装 Python，然后安装依赖；也会尝试调用随包的 Chrome 安装程序。依赖安装需要联网，请按提示完成。如果 Chrome 仍未装好，可另行双击 `3-安装浏览器.bat` 补装。
+5. 双击 `2-开始采集.bat`，选择平台、输入关键词和商品数量。首次使用在弹出的浏览器内登录，再回到终端按 Enter。
 
-浏览器安装包放在 [GitHub Release](https://github.com/wildfuldawn/ecommerce-search-collector/releases/tag/chrome-installer-20261121)，不会包含在普通源码 ZIP 中。附件仅含 Chrome 安装程序与安装说明，不含 Python、Node.js、账号或采集结果；同一 Release 的 `SHA256SUMS.txt` 可校验 ZIP 完整性。安装程序已核对 Google LLC 数字签名。
+Python 和 Chrome 安装包分别放在 [Python Release](https://github.com/wildfuldawn/ecommerce-search-collector/releases/tag/python-installer-20261121) 与 [Chrome Release](https://github.com/wildfuldawn/ecommerce-search-collector/releases/tag/chrome-installer-20261121)，不会包含在普通源码 ZIP 中。两个附件均应解压到源码根目录，而不是解压到源码文件夹外面。附件只包含相应安装程序和说明，不含 Node.js、账号或采集结果；各自 Release 的 `SHA256SUMS.txt` 可校验 ZIP 完整性。安装程序已分别核对 Python Software Foundation、Google LLC 数字签名。
 
 也可在终端安装依赖并启动：
 
